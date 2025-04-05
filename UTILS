@@ -1,35 +1,31 @@
+# ===============
+# Core libraries
+# ===============
+import time  # Timing operations
+import re    # Regular expressions
+
+# ====================
+# Computing and data manipulation
 import numpy as np
 import pandas as pd
-import re
-import openpyxl
-import networkx as nx
-import time  # <-- This was missing!
+# =====================
 
-# Libraries for SQL
+# ===================
+# Excel I/O support
+# ===================
+import openpyxl  # Required for reading/writing .xlsx files
+
+# ===================
+# Graph theory and network analysis
+# ==================
+import networkx as nx
+
+# =====================================
+# SQLAlchemy for database connectivity
+# =====================================
 import sqlalchemy
 from sqlalchemy import create_engine
 
-# ------------------------------- Tokenization Functions -------------------------------
-def tokenize(text, mode):
-    """
-    Tokenizes text while preserving NSN structures.
-    
-    Parameters:
-        text (str): The input text to tokenize.
-        mode (str): Tokenization mode. 
-                    - "default": Removes unwanted artifacts, splits words.
-                    - "nsn": Keeps NSNs as a single token.
-    
-    Returns:
-        List of tokens.
-    """
-    text = str(text).strip()  # Ensure text is string and stripped
-    if mode == "nsn":
-        return [text]  # Treat entire NSN as a single token
-    else:
-        text = text.replace("_x000d_", " ")  # Remove unwanted artifacts
-        text = re.sub(r'\s+(\d+)', r'\1', text)  # Remove spaces before numbers
-        return re.findall(r'\b\w+\b', text.lower())  # Extract words
 
 # ------------------------------- One-Hot Encoding -------------------------------
 def one_hot_encode(y, vocab_size):
@@ -132,137 +128,6 @@ def dtw_distance(series1, series2):
                                           dtw_matrix[i-1, j-1])  # Match
 
     return dtw_matrix[n, m]
-
-# ------------- Functions for loading Data -------------------------
-def initial_data_fun(source):
-    """
-    Processes data differently based on the source type.
-
-    Parameters:
-    - source (str): The source identifier ('BOM360' or 'PDM202').
-    - data: The input data to be processed.
-
-    Returns:
-    - Processed data or an error message if source is unknown.
-    """
-    start_time = time.time()  # Start timing
-    
-    if source == "BOM360":
-        print(f"Processing {source} data...")
-        
-        user = 'kjoiner'
-        password = ''
-        database = 'sandbox'
-
-        # Replace with your actual credentials and host details
-        engine = create_engine(f'postgresql+psycopg2://{user}:{password}@localhost:5432/{database}')
-        connection = engine.raw_connection()
-        cursor = connection.cursor()
-
-        print(f"Connection succesfull...")
-        
-        schema_name = 'ztdf_bom_automation'  #BOM360 filename = ztdf_bom_automation.B52_BDP
-        table = 'B52_BDP'
-
-        query = f'SELECT * FROM {schema_name}."{table}" LIMIT 100'  #SQL query here
-        cursor.execute(query)
-        rows = cursor.fetchall()
-
-        data_array = np.array(rows) 
-
-        df = pd.DataFrame(data_array) # change name to df and run separately from PDM 202 data
-
-        cursor.close()
-        connection.close()
-
-        end_time = time.time()  # End timing
-        elapsed_time = end_time - start_time
-
-        print(f"Initial data loaded in {elapsed_time:.4f} seconds!!")
-        # Dimensions of a DataFrame
-        print(f"\n\033[1mDimensions:\033[0m {df.shape}")
-
-        # Check for duplicate rows
-        print(f"\033[1mDuplicate Rows:\033[0m {df.duplicated().sum()}")
-
-        df.rename(columns={27: 'NSN'}, inplace=True)
-        df.to_csv('data/initial/BOM360.csv', index=False)
-        print(f"\033[1mInitial data saved to:\033[0m '{'data/initial/BOM360.csv'}'")
-        
-        return df
-    
-    elif source == "PDM202":
-        print(f"Processing initial {source} data...")
-        file_path = "/p/projects/subgroups/dsaf/share_data/PDM202/PDM202/initial_files/202s_13Dec24.xlsx"
-        df = pd.read_excel(file_path, engine="openpyxl")
-
-        end_time = time.time()  # End timing
-        elapsed_time = end_time - start_time
-        
-        print(f"Initial data loaded in {elapsed_time:.4f} seconds!!")
-        # Dimensions of a DataFrame
-        print(f"\n\033[1mDimensions:\033[0m {df.shape}")
-
-        # Check for duplicate rows
-        print(f"\033[1mDuplicate Rows:\033[0m {df.duplicated().sum()}")
-        
-        df.to_csv('data/initial/PDM202.csv', index=False)
-        print(f"\033[1mInitial data saved to:\033[0m '{'data/initial/PDM202.csv'}'\n")
-        
-        return df
-    
-    else:
-        print(f"Error: Unknown source '{source}'")
-        return None
-
-def preliminary_data_fun(source):
-
-    start_time = time.time()  # Start timing
-    # Load CSV file into a DataFrame
-    source = 'PDM202'
-    csv_filename = f"data/initial/{source}.csv"  
-    
-    # Select data column
-    my_col = 'NSN' #NSN TO/DWG No. Part No.  
-
-    print(f"Processing preliminary {source} data...")
-    
-    # Extract FSC and NATO Code using the extact_fsc_nato function
-    my_data = pd.read_csv(csv_filename)
-    instructions = my_data[my_col].dropna().tolist()
-    nsn_list = instructions #[:1000]
-    
-    fsc_codes = []
-    nato_codes = []
-    data = []
-    
-    for nsn in nsn_list:
-        fsc, country_code, identifier = extract_fsc_nato(nsn)
-        fsc_codes.append(fsc if fsc != "Unknown" else "-1")  # Replace 'Unknown' with '-1'
-        nato_codes.append(country_code if country_code != "Unknown" else "-1")  # Replace 'Unknown' with '-1'
-        data.append([nsn, fsc, country_code, identifier])
-    
-    # Convert data to dataFrame
-    df = pd.DataFrame(data, columns=["NSN", "FSC", "Country", "Identifier"])
-    
-    # Save unique FSC and NATO codes to CSV
-    preliminary_filename = f"data/extracted_{source}_fsc_nato.csv"
-    df.to_csv(preliminary_filename, index=False)
-
-    end_time = time.time()  # End timing
-    elapsed_time = end_time - start_time
-        
-    print(f"Preliminary data loaded in {elapsed_time:.4f} seconds!!\n")
-
-    # Dimensions of a DataFrame
-    print(f"\033[1mDimensions:\033[0m {df.shape}")
-
-    # Check for duplicate rows
-    print(f"\033[1mDuplicate Rows:\033[0m {df.duplicated().sum()}, (% {round(100*df.duplicated().sum()/df.shape[0])} of data)")
-
-    print(f"\033[1mPreliminary Data Saved To:\033[0m '{preliminary_filename}'\n")
-
-    return df
     
 # Function to extract FSC and NATO codes
 def extract_fsc_nato(nsn):
