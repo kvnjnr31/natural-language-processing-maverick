@@ -1,0 +1,870 @@
+# ========================
+# Standard library imports
+# =========================
+import os
+import re
+import time
+import datetime
+from collections import defaultdict
+
+# ======================
+# Third-party imports
+# ======================
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import networkx as nx
+import yaml
+from scipy import stats
+from sqlalchemy import create_engine
+
+# ==========================
+# IPython/Jupyter-specific magic (optional)
+# ========================
+%matplotlib inline
+
+# ------------------------------- Data Processing Module -------------------------------
+class DATA_PROCESSOR_MODULE:
+    """
+    Handles structured data operations, preprocessing, and feature extraction.
+    """
+    def __init__(self, df=None):
+        self.df = None
+        if df is not None:
+            self.load_data(df)
+
+    def data_import(username, password, source, database, filename, size):
+        """
+        Imports data based on source type and logs a classified-style system response.
+        """
+        start_time = time.time()  # SYSTEM TIMER INITIATED
+        print("\033[1m[MAVERICK] SYSTEM LOGS:\033[0m\n")
+        
+        if source == "BOM360":
+            print(f"[MAVERICK] DATA RETRIEVAL - BOM360")
+        elif source == "EN_202":
+            print(f"[MAVERICK] DATA RETRIEVAL - EN_202")
+        else:
+            print(f"[MAVERICK] ERROR: UNKNOWN SOURCE '{source}'")
+            return None
+    
+        print("[MAVERICK] CONNECTING TO DATABASE")
+        
+        if source == "BOM360":
+
+            
+            engine = create_engine(f'postgresql+psycopg2://{username}:{password}@localhost:5432/{database}')
+            connection = engine.raw_connection()
+            cursor = connection.cursor()
+            
+            schema_name, table = filename.split(".")
+            query = f'SELECT * FROM {schema_name}."{table}" LIMIT {size}'
+            
+            print("\n[MAVERICK] DATABASE LINK ESTABLISHED...")
+            print("[MAVERICK] LOCATING TARGET FILE... STAND BY...")
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            data_array = np.array(rows)
+            df = pd.DataFrame(data_array)
+    
+            cursor.close()
+            connection.close()
+    
+        elif source == "EN_202":
+           
+            directory = "/p/projects/subgroups/dsaf/share_data/EN_202/EN_202/initial_files"
+            file_path = os.path.join(directory, filename)
+            
+            df = pd.read_excel(file_path, engine="openpyxl")
+
+            print("\n[MAVERICK] DATABASE LINK ESTABLISHED...")
+            print("[MAVERICK] LOCATING TARGET FILE... STAND BY...")
+            df = df.iloc[:size, :]
+            
+        
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+    
+        print(f"\n[MAVERICK] EXTRACTING TARGET DATA")
+        print(f"[MAVERICK] TARGET ACQUIRED: {filename}")
+        print(f"[MAVERICK] TIME ELAPSED: {elapsed_time:.4f} SECONDS")
+        print(f"[MAVERICK] DATASET SIZE: {df.shape[0]} ROWS, {df.shape[1]} COLUMNS")
+        print(f"[MAVERICK] DUPLICATE RECORDS: {df.duplicated().sum()} DETECTED")
+        print(f"[MAVERICK] CLASSIFIED DATA ARCHIVED TO: 'data/initial/{source}.csv'")
+        
+        df.to_csv(f'data/initial/{source}.csv', index=False)
+        return df
+        
+    def decompose_data(source, df, my_features, method):
+
+        #source, my_data['NSN'], my_features, method
+        """
+        Decomposes my_col column into its individual components like FSC, Country Code, and NIIN.
+        
+        Parameters:
+            source (str): The source identifier (e.g., 'PDM202').
+            my_col (str): Column containing NSNs
+        
+        Returns:
+            DataFrame: Processed DataFrame containing NSN, FSC, Country, and NIIN.
+        """
+        start_time = time.time()  # Start timing           
+        
+        print(f"[MAVERICK] PROCESSING: DECOMPOSING DATA FROM {source}...")
+        
+        df.columns = df.columns.str.upper().str.strip()  # Standardize column names
+        my_list = df.dropna().iloc[:, 0].tolist() 
+
+        # Extract components using decomposition rules in method
+        feature_cols = [method(row) for row in my_list]  #note the '*' is needed for unpacking method's tuple
+        
+        # Convert to DataFrame        
+        df1 = pd.DataFrame(feature_cols, columns=my_features)
+        df_combined = df1 #pd.concat([df, df1], axis=1)
+        
+        # Save processed data
+        output_filename = f"data/extracted_{source}_{my_features[0]}_to_{my_features[1]}.csv"
+        df_combined.to_csv(output_filename, index=False)
+    
+        elapsed_time = time.time() - start_time
+        print(f"[MAVERICK] PROCESS COMPLETE: {df.shape[0]} RECORDS PROCESSED IN {elapsed_time:.4f} SECONDS.")
+        print(f"[MAVERICK] OUTPUT SAVED TO: '{output_filename}'\n")
+    
+        return df_combined
+
+    def cluster_data(df, GP0, GP1):
+        """
+        Clusters processed data by user-specified columns and returns structured dictionaries.
+        """
+        
+        required_cols = set(GP0 + GP1)
+        missing_cols = [col for col in required_cols if col not in df.columns]
+
+        if missing_cols:
+            print(f"[MAVERICK] ERROR: MISSING COLUMNS - {missing_cols}")
+            print(f"[MAVERICK] AVAILABLE COLUMNS: {list(df.columns)}")
+            return None
+
+        print(f"[MAVERICK] SYSTEM_CLUSTER: INITIALIZING CLUSTERING OPERATION...")
+
+        system_dictionary = {}
+
+        system_dictionary[f"{GP0[1]}_BY_{GP0[0]}"] = (
+            df.groupby(GP0[0])[GP0[1]]
+            .nunique()
+            .sort_values(ascending=False)
+            .to_dict()
+        )
+
+        system_dictionary[f"{GP1[1]}_BY_{GP1[0]}"] = (
+            df.groupby(GP1[0])[GP1[1]]
+            .nunique()
+            .sort_values(ascending=False)
+            .to_dict()
+        )
+
+        print("[MAVERICK] SYSTEM_CLUSTER: PROCESS COMPLETE")
+        return system_dictionary
+
+    def compare_features(df, features_to_compare, tail_length, fig_name):
+        print("[MAVERICK] INITIATING PATTERN ANALYSIS... STAND BY.")
+        start_time = time.time()  # Start timer
+    
+        if len(features_to_compare) < 2:
+            print("[MAVERICK] ERROR: INSUFFICIENT DATA. ABORTING OPERATION.")
+            raise ValueError("At least two columns are required for comparison!")
+    
+        print("[MAVERICK] Feature set confirmed. Engaging comparative analysis...\n")
+    
+        # Dictionary to store pattern distributions
+        distributions = {}
+    
+        for column in features_to_compare: 
+            print(f"[MAVERICK] PROCESSING {column.upper()}... SCANNING FOR PATTERNS...")
+            time.sleep(0.5)
+    
+            df_feature = df[[column]].copy()
+            df_feature['Pattern'] = df_feature[column].apply(CIPHERLEX_MODULE.word_encoder)
+            pattern_counts = df_feature['Pattern'].value_counts().head(tail_length)
+    
+            distributions[column] = pattern_counts
+    
+        # Normalize for KS analysis
+        norm_distributions = {
+            key: np.array(values) / np.sum(values)
+            for key, values in distributions.items()
+        }
+    
+        # Perform KS tests
+        ks_results = {}
+        keys = list(norm_distributions.keys())
+    
+        for i in range(len(keys)):
+            for j in range(i + 1, len(keys)):
+                key1, key2 = keys[i], keys[j]
+                ks_stat, p_value = stats.ks_2samp(norm_distributions[key1], norm_distributions[key2])
+                ks_results[f"{key1} vs {key2}"] = {
+                    "KS Statistic": ks_stat,
+                    "P-Value": p_value,
+                    "Significant Difference": p_value < 0.05
+                }
+    
+        print("\n[MAVERICK] PATTERN STRUCTURES IDENTIFIED.")
+        for comparison, result in ks_results.items():
+            print(f"\n\033[1m{comparison}:\033[0m")
+            print(f"  KS Statistic: {result['KS Statistic']:.4f}")
+            print(f"  P-Value: {result['P-Value']:.4f}")
+            print("  → " + (
+                "The distributions are significantly different."
+                if result["Significant Difference"] else
+                "No significant difference detected."
+            ))
+    
+        elapsed_time = time.time() - start_time
+        print(f"\n[MAVERICK] OPERATION TIME: {elapsed_time:.4f} SECONDS.")
+    
+        return distributions, ks_results
+
+# ---
+    def assess_data_completeness(self, df, columns_to_display, export_report=True):
+        """
+        Identifies problematic missing data cases, attempts data recovery using equivalent 
+        Part No. & NSN for all missing features, and assesses operational impact.
+
+        Args:
+            df (DataFrame): The dataset being analyzed.
+            columns_to_display (list): Columns to include in the analysis.
+            export_report (bool): If True, generates a METAL GEAR-style military text report.
+
+        Returns:
+            dict: {
+                "missing_summary": DataFrame with missing value analysis,
+                "equivalent_rows": Dictionary of alternative row matches per column,
+                "impact_summary": Impact assessment report.
+            }
+        """
+        print("\n\033[1m[MAVERICK] SYSTEM LOGS:\033[0m")
+        print("\n[MAVERICK] INITIATING FULL DATA COMPLETENESS SCAN...")
+
+        # Step 1: Identify missing values per column
+        missing_data = df[columns_to_display].isna()
+        missing_counts = missing_data.sum()
+
+        # Calculate missing percentages
+        total_rows = len(df)
+        missing_percentages = (missing_counts / total_rows) * 100
+
+        # Identify fully missing rows
+        fully_missing_rows = df[columns_to_display].isna().all(axis=1).sum()
+
+        # Identify duplicate rows
+        duplicate_count = df.duplicated().sum()
+
+        # Generate missing data report
+        missing_summary = pd.DataFrame({
+            "Missing Count": missing_counts,
+            "Missing Percentage": missing_percentages.round(2)
+        }).sort_values(by="Missing Count", ascending=False)
+
+        print("\n[MAVERICK] MISSING DATA SUMMARY")
+        print(missing_summary)
+
+        # Visualization: Missing Data Bar Chart
+        plt.figure(figsize=(10, 5))
+        sns.barplot(x=missing_summary.index, y=missing_summary["Missing Percentage"], palette="Blues_r")
+        plt.xticks(rotation=45)
+        plt.ylabel("Missing Percentage (%)")
+        plt.title("Missing Data Distribution")
+        plt.show()
+
+        # Step 2: Search for alternative rows for ALL missing columns
+        print("\n[MAVERICK] SEARCHING FOR ALTERNATIVE DATA SOURCES...")
+        
+        equivalent_rows_dict = {}
+
+        for col in columns_to_display:
+            if missing_counts[col] > 0:  # Only process columns with missing data
+                print(f"\n[MAVERICK] Checking alternatives for missing '{col}' values...")
+
+                missing_rows = df[df[col].isna()]  # Select rows where col is NaN
+
+                # Dynamically define reference columns (all columns except the missing col)
+                reference_cols = [c for c in ["Part No.", "NSN", "TO/DWG No."] if c != col]
+
+                # Filter equivalent rows dynamically
+                equivalent_rows = df[
+                    df[reference_cols[0]].isin(missing_rows[reference_cols[0]]) &
+                    df[reference_cols[1]].isin(missing_rows[reference_cols[1]]) &
+                    df[col].notna()
+                ]
+
+                if not equivalent_rows.empty:  # Fix: Correct placement of the condition
+                    print(f"✅ [MAVERICK] Alternative '{col}' values found!")
+                    equivalent_rows_dict[col] = equivalent_rows
+                else:
+                    print(f"⚠️ [MAVERICK] No alternative data found for '{col}'!")
+
+        # Step 3: Assess impact if no new information is found
+        print("\n[MAVERICK] ASSESSING MISSION IMPACT...")
+
+        impact_summary = {}
+        for col in columns_to_display:
+            df[f"Impact_{col}"] = df[col].isna().map({True: "High", False: "Low"})
+            impact_summary[col] = df[f"Impact_{col}"].value_counts()
+
+        print("\n📌 Impact Summary:")
+        for col, impact in impact_summary.items():
+            print(f"\nImpact of missing '{col}':\n{impact}")
+
+        # Step 4: Generate report
+        if export_report:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            report_filename = f"DATA_REPORT_{timestamp}.txt"
+
+            with open(report_filename, "w") as report:
+                report.write("=========================================\n")
+                report.write("DATA COMPLETENESS REPORT \n")
+                report.write("=========================================\n\n")
+                report.write(f"Mission Timestamp: {timestamp}\n")
+                report.write("Classification: CUI\n")
+                report.write("Report Type: DATA COMPLETENESS & RISK ANALYSIS\n\n")
+
+                # Missing Data Report
+                report.write("========== MISSING DATA SUMMARY ==========\n")
+                report.write(missing_summary.to_string() + "\n\n")
+
+                # Alternative Matches
+                report.write("========== ALTERNATIVE DATA RECOVERY ==========\n")
+                if any(isinstance(df, pd.DataFrame) and not df.empty for df in equivalent_rows_dict.values()):
+                    for col, eq_rows in equivalent_rows_dict.items():
+                        if isinstance(eq_rows, pd.DataFrame) and not eq_rows.empty:
+                            report.write(f"🔎 {col} Recovery - {len(eq_rows)} Matches Found\n")
+                            report.write(eq_rows.to_string() + "\n\n")
+                else:
+                    report.write("⚠️ NO ALTERNATIVE MATCHES FOUND - DATA LOSS DETECTED\n\n")
+
+                # Impact Assessment
+                report.write("========== OPERATIONAL IMPACT ASSESSMENT ==========\n")
+                for col, impact in impact_summary.items():
+                    report.write(f"\nImpact of Missing '{col}':\n{impact.to_string()}\n")
+
+                report.write("=========================================\n")
+                report.write("[MAVERICK] TACTICAL INTELLIGENCE SYSTEM\n")
+                report.write("[END TRANSMISSION]\n")
+
+            print(f"\n✅ [MAVERICK] REPORT FILE GENERATED: {report_filename}")
+
+        # Return structured output
+        return {
+            "missing_summary": missing_summary,
+            "equivalent_rows": equivalent_rows_dict,
+            "impact_summary": impact_summary
+        }
+# ------------------------------- Embedding Module -------------------------------
+class CIPHERLEX_MODULE:
+    """
+    Manages tokenization, word embeddings, and vector storage.
+    """
+    def __init__(self):
+        self.embeddings = {}
+
+    # ------------------------------- Tokenization Functions -------------------------------
+    def tokenize(text, mode):
+        """
+        Tokenizes text while preserving NSN structures.
+        
+        Parameters:
+            text (str): The input text to tokenize.
+            mode (str): Tokenization mode. 
+                        - "default": Removes unwanted artifacts, splits words.
+                        - "nsn": Keeps NSNs as a single token.
+        
+        Returns:
+            List of tokens.
+        """
+        text = str(text).strip()  # Ensure text is string and stripped
+        
+        # Explicitly remove _x000d_ and other newline artifacts
+        text = text.replace("_x000d_", " ").replace("\n", " ").replace("\t", " ")
+            
+        if mode == "nsn":
+            return [text]  # Treat entire NSN as a single token
+        else:
+            text = re.sub(r'\s+(\d+)', r'\1', text)  # Remove spaces before numbers
+            words = re.findall(r'\b\w+\b', text.lower())  # Extract words
+    
+            # Explicitly filter out '_x000d_' and any empty tokens
+            words = [word for word in words if word != "_x000d_"]
+    
+            return words
+    
+    # ------------------------------- NSN Encoding Functions -------------------------------
+    def encode_nsn_structure(nsn):
+        """Encodes NSN by character type pattern."""
+        nsn_str = str(nsn).strip()
+        encoded_structure = "".join(categorize_char(c) for c in nsn_str)
+        return encoded_structure
+
+    def extract_fsc_niin(nsn_col):
+        """
+        Extracts the FSC (first 4 digits) and NIIN (9 digits). Note: NATO Country Code (first 2 digits of NIIN).
+        Strips hyphens and ensures correct length formatting.
+        If extraction fails, returns '-1' as default.
+        """
+        try:
+            nsn_str = re.sub(r'[^0-9]', '', str(nsn_col).strip())  # Remove all non-numeric characters
+    
+            # Ensure NSN is at least 13 digits (FSC + NIIN)
+            if len(nsn_str) < 13:
+                return "-1", "-1"
+    
+            fsc = nsn_str[:4]  # First 4 digits = FSC
+            niin = nsn_str[4:]  # Next 2 digits = NATO Country Code
+    
+            return fsc, niin
+        except Exception:
+            return "-1", "-1"  # Default unknown values
+    
+    # Function to categorize a character
+    def categorize_char(c):
+        char_groups = {
+            "digits": "0123456789",
+            "letters": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            "hyphen": "-",
+            "space": " ",
+            "special": "!@#$%^&*()_+=<>?/"  # Example set of special characters
+        }
+        
+        if c in char_groups["digits"]:
+            return "D"
+        elif c in char_groups["letters"]:
+            return "L"
+        elif c in char_groups["hyphen"]:
+            return "H"
+        elif c in char_groups["space"]:
+            return "S"
+        elif c in char_groups["special"]:
+            return "X"
+        return "U"  # Unknown
+    
+    # Function to encode part numbers into generalized format
+    @staticmethod
+    def word_encoder(word):
+        word = str(word)  # Ensure it's a string
+        encoded = ''
+        
+        for char in word:
+            if char.isdigit():
+                encoded += 'N'  # Replace digits with 'N'
+            elif char.isalpha():
+                encoded += 'A'  # Replace letters with 'A'
+            else:
+                encoded += char  # Keep special characters (e.g., '-')
+        
+        return encoded
+# ------------------------------- LSTM Module -------------------------------
+class LSTM_MODULE:
+    
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        self.input_dim = input_dim    
+        self.hidden_dim = hidden_dim  
+        self.output_dim = output_dim  
+
+        self.Wf = np.random.randn(hidden_dim, hidden_dim + input_dim) * 0.01      
+        self.Wi = np.random.randn(hidden_dim, hidden_dim + input_dim) * 0.01      
+        self.Wc = np.random.randn(hidden_dim, hidden_dim + input_dim) * 0.01      
+        self.Wo = np.random.randn(hidden_dim, hidden_dim + input_dim) * 0.01      
+        self.Wy = np.random.randn(output_dim, hidden_dim) * 0.01  
+
+        self.bf, self.bi, self.bc, self.bo = [np.zeros((hidden_dim, 1)) for _ in range(4)]
+        self.by = np.zeros((output_dim, 1))
+
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
+
+    def softmax(self, x):
+        exp_x = np.exp(x - np.max(x))
+        return exp_x / np.sum(exp_x, axis=0, keepdims=True)
+
+# --- LSTM Forward Pass ----
+    def forward(self, X):
+        """
+        Forward pass through the LSTM.
+        """
+        batch_size, seq_length = X.shape
+        h_t = np.zeros((self.hidden_dim, batch_size))
+        C_t = np.zeros((self.hidden_dim, batch_size))
+
+        outputs, h_states, c_states = [], [], []
+        f_states, i_states, C_tilde_states, o_states = [], [], [], []
+
+        for t in range(seq_length):
+            x_t = X[:, t]  
+            x_t_embedded = np.eye(self.input_dim)[x_t].T  
+            concat = np.vstack((h_t, x_t_embedded))  
+
+            f_t = sigmoid(np.dot(self.Wf, concat) + self.bf)  
+            i_t = sigmoid(np.dot(self.Wi, concat) + self.bi)  
+            C_tilde = np.tanh(np.dot(self.Wc, concat) + self.bc)  
+            C_t = f_t * C_t + i_t * C_tilde
+            o_t = sigmoid(np.dot(self.Wo, concat) + self.bo)  
+            h_t = o_t * np.tanh(C_t)
+
+            y_t = softmax(np.dot(self.Wy, h_t) + self.by)  
+            
+            # Store states
+            outputs.append(y_t)
+            h_states.append(h_t)
+            c_states.append(C_t)
+            f_states.append(f_t)  
+            i_states.append(i_t)  
+            C_tilde_states.append(C_tilde)  
+            o_states.append(o_t)  
+
+        return np.array(outputs), h_states, c_states, f_states, i_states, C_tilde_states, o_states
+
+# --- LSTM Backward Pass ----
+    def backward(self, X, y, outputs, h_states, c_states, f_states, i_states, C_tilde_states, o_states, learning_rate):
+        """
+        Backward pass through the LSTM.
+        """
+        batch_size, seq_length = X.shape
+    
+        # Initialize gradients
+        dWf = np.zeros_like(self.Wf)
+        dWi = np.zeros_like(self.Wi)
+        dWc = np.zeros_like(self.Wc)
+        dWo = np.zeros_like(self.Wo)
+        dWy = np.zeros_like(self.Wy)
+    
+        dbf = np.zeros_like(self.bf)
+        dbi = np.zeros_like(self.bi)
+        dbc = np.zeros_like(self.bc)
+        dbo = np.zeros_like(self.bo)
+        dby = np.zeros_like(self.by)
+    
+        d_h_next = np.zeros((self.hidden_dim, batch_size))
+        d_C_next = np.zeros((self.hidden_dim, batch_size))
+    
+        for t in reversed(range(seq_length)):
+
+            """Compute one hot encoded errors across all samples""" 
+            dy = outputs[t] - y  # expected shape: (vocab, batch size)
+    
+            """Compute the gradient of Wy"""
+            dWy += np.dot(dy, h_states[t].T)  # expected shape: (vocab, hidden dim) 
+            dby += np.sum(dy, axis=1, keepdims=True)  # shape: (vocab, 1)
+
+            #bias:
+            dh = np.dot(self.Wy.T, dy) + d_h_next #Wy shape: (vocab, hidden dim), expected shape: (hidden dim, batch size)
+            do = dh * np.tanh(c_states[t]) * (o_states[t] * (1 - o_states[t])) # c_states[t] shape: (hidden dim, batch size)
+        
+            # Get previous hidden state or zero vector for t=0
+            h_prev = h_states[t - 1] if t > 0 else np.zeros_like(h_states[0])  # h_prev shape: (hidden dim, batch size)
+                
+            # t-th word one hot encoding across all batches 
+            x_t = np.eye(self.input_dim)[X[:, t]].T  # shape: (vocab, batch size)
+            concat = np.vstack((h_prev, x_t)) # shape: (vocab + hidden dim, batch size)
+            
+            dWo += np.dot(do, concat.T) # shape (hidden dim, vocab + hidden dim)
+            dbo += np.sum(do, axis=1, keepdims=True)
+            
+            dC = dh * o_states[t] * (1 - np.tanh(c_states[t]) ** 2) + d_C_next
+            dC_tilde = dC * sigmoid(c_states[t]) * (1 - np.tanh(c_states[t]) ** 2)
+            dWc += np.dot(dC_tilde, concat.T)
+            dbc += np.sum(dC_tilde, axis=1, keepdims=True)
+    
+            di = dC * np.tanh(c_states[t]) * sigmoid(h_states[t]) * (1 - sigmoid(h_states[t]))
+            dWi += np.dot(di, concat.T)
+            dbi += np.sum(di, axis=1, keepdims=True)
+    
+            df = dC * (c_states[t - 1] if t > 0 else np.zeros_like(c_states[0])) * sigmoid(h_states[t]) * (1 - sigmoid(h_states[t]))
+            dWf += np.dot(df, concat.T)
+            dbf += np.sum(df, axis=1, keepdims=True)
+    
+            d_C_next = dC * sigmoid(h_states[t])
+            d_h_next_full = np.dot(self.Wf.T, df) + np.dot(self.Wi.T, di) + np.dot(self.Wc.T, dC_tilde) + np.dot(self.Wo.T, do)
+            
+            """Since d_h_next is the gradient with respect to the hidden state only, we need truncate the vocab_size 
+            part and keep only the first hidden_dim rows, which correspond to the hidden state!"""
+            # Keep only the first hidden_dim rows (ignore vocab-size rows)
+            d_h_next = d_h_next_full[:self.hidden_dim, :]
+            
+        # Update parameters
+        self.Wf -= learning_rate * dWf
+        self.Wi -= learning_rate * dWi
+        self.Wc -= learning_rate * dWc
+        self.Wo -= learning_rate * dWo
+        self.Wy -= learning_rate * dWy
+    
+        self.bf -= learning_rate * dbf
+        self.bi -= learning_rate * dbi
+        self.bc -= learning_rate * dbc
+        self.bo -= learning_rate * dbo
+        self.by -= learning_rate * dby
+        
+# ------------------------------- Graphing Module -------------------------------
+class GRAPHING_MODULE:
+    """
+    Handles visualization and clustering.
+    """
+    def generate_graphs(df):
+        """
+        Creates a network graph showing:
+        - FSC at the center
+        - Part numbers connected to FSC
+        - NIINs connected to part numbers
+        - NIINs are the same color as their associated part number
+        """
+        G = nx.Graph()
+        
+        fsc_value = df['FSC'].iloc[0]  # Assuming single FSC in the filtered dataset
+        part_numbers = df['Part No.'].unique()
+    
+        # Generate unique colors for each part number
+        color_map = {part: plt.cm.tab10(i % 10) for i, part in enumerate(part_numbers)}
+    
+        # Add FSC node (central node)
+        G.add_node(f"FSC-{fsc_value}", size=500, color="black")
+    
+        # Add part numbers as nodes connected to FSC
+        for part in part_numbers:
+            G.add_node(part, size=300, color=color_map[part])
+            G.add_edge(f"FSC-{fsc_value}", part)
+    
+        # Add NIINs as nodes, connected to their corresponding part numbers
+        for _, row in df.iterrows():
+            part = row['Part No.']
+            niin = row['NIIN']
+            G.add_node(niin, size=200, color=color_map[part])  # Same color as Part No.
+            G.add_edge(part, niin)
+    
+        # Extract node attributes for plotting
+        node_colors = [nx.get_node_attributes(G, "color").get(node, "gray") for node in G.nodes()]
+        node_sizes = [nx.get_node_attributes(G, "size").get(node, 100) for node in G.nodes()]
+    
+        # Draw the graph
+        plt.figure(figsize=(12, 8))
+        pos = nx.spring_layout(G, seed=42)  # Layout for clarity
+        nx.draw(G, pos, with_labels=True, node_color=node_colors, node_size=node_sizes, edge_color="gray", font_size=9)
+    
+        plt.title(f"FSC {fsc_value} - Part Numbers & NIINs")
+        plt.show()
+# ------------------------------- MAVERICK (Master Class) -------------------------------
+class MAVERICK:
+    """
+    Master class that integrates all submodules.
+    """
+    def __init__(self, df=None, input_dim=None, hidden_dim=None, output_dim=None):
+        self.processor = DATA_PROCESSOR_MODULE() 
+        self.embedder = CIPHERLEX_MODULE()
+        self.lstm = LSTM_MODULE(input_dim, hidden_dim, output_dim) if input_dim else None
+        self.graph = GRAPHING_MODULE()
+
+    def load_data(self, username, password, source, database, filename, size):
+        return DATA_PROCESSOR_MODULE.data_import(username, password, source, database, filename, size)
+
+    def compare_features(self, df, columns_to_compare, tail_length, fig_name):
+        return DATA_PROCESSOR_MODULE.compare_features(df, columns_to_compare, tail_length, fig_name)  # Now correctly routed through self.processor
+
+    def decompose_data(self, source, my_col, my_group, method):
+        return DATA_PROCESSOR_MODULE.decompose_data(source, my_col, my_group, method)
+        
+#---
+    def LFE_AD(self, df, nsn_column, k=3):
+        """
+        Implements Lexical Feature Extraction for Anomaly Detection (LFE-AD).
+        
+        Args:
+            df (DataFrame): Input dataset containing NSNs.
+            nsn_column (str): Column name for NSNs.
+            k (int): Number of iterations to refine outliers.
+        
+        Returns:
+            dict: {
+                "cleaned_nsn_set": final high-confidence NSNs,
+                "original_outliers": initially flagged anomalies,
+                "refined_outliers": adjusted versions of outliers post-processing
+            }
+        """
+        # Step 1: Encode NSNs using CIPHERLEX_MODULE
+        df = df.dropna(subset=[nsn_column]).copy()  # Drop missing values
+        df["Encoded_NSN"] = df[nsn_column].apply(self.embedder.word_encoder)  # Encode NSNs
+
+        # Step 2: Compute distribution of patterns
+        pattern_counts = df["Encoded_NSN"].value_counts()
+        total_nsns = pattern_counts.sum()
+
+        # Step 3: Select top 80% of patterns based on frequency
+        threshold = 0.8 * total_nsns
+        cumulative_count, core_patterns = 0, set()
+        
+        for pattern, count in pattern_counts.items():
+            core_patterns.add(pattern)
+            cumulative_count += count
+            if cumulative_count >= threshold:
+                break  # Stop once 80% coverage is reached
+
+        # Step 4: Identify initial outliers (not in core patterns)
+        df["Anomaly"] = ~df["Encoded_NSN"].isin(core_patterns)
+        original_outliers = df[df["Anomaly"]]["Encoded_NSN"].tolist()
+
+        # Step 5: Iterative Refinement (K iterations)
+        refined_outliers = set(original_outliers)
+        for _ in range(k):
+            # Recompute frequencies within outliers
+            outlier_counts = pd.Series(list(refined_outliers)).value_counts()
+            most_frequent_outliers = set(outlier_counts.head(len(outlier_counts) // 2).index)
+            
+            # Keep only the most frequent outliers
+            refined_outliers.intersection_update(most_frequent_outliers)
+
+        # Step 6: Return results
+        return {
+            "cleaned_nsn_set": list(core_patterns),
+            "original_outliers": original_outliers,
+            "refined_outliers": list(refined_outliers)
+        }
+
+# --- 
+    def assess_data_completeness(self, df, columns_to_display, export_report=True):
+        """
+        Wrapper for MAVERICK to perform automated data completeness assessment
+        and generate a Metal Gear-style retro mission log report.
+
+        Args:
+            df (DataFrame): Input dataset for analysis.
+            columns_to_display (list): Columns to evaluate for missing data.
+            export_report (bool): If True, generates a military-style text report.
+
+        Returns:
+            dict: {
+                "missing_summary": DataFrame with missing value analysis,
+                "equivalent_rows": DataFrame with alternative TO/DWG No. matches,
+                "impact_summary": Impact assessment report.
+            }
+        """
+        print("\n[MAVERICK] INITIATING DATA COMPLETENESS ANALYSIS... ")
+
+        # Perform data completeness assessment
+        report_data = self.processor.assess_data_completeness(df, columns_to_display)
+
+        if export_report:
+            # Generate report file
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            report_filename = f"DATA_REPORT_{timestamp}.txt"
+
+            with open(report_filename, "w") as report:
+                report.write("=========================================\n")
+                report.write("DATA COMPLETENESS REPORT \n")
+                report.write("=========================================\n\n")
+                report.write(f"Mission Timestamp: {timestamp}\n")
+                report.write("Classification: CUI\n")
+                report.write("Report Type: DATA COMPLETENESS & RISK ANALYSIS\n\n")
+
+                # Missing Data Report
+                report.write("========== MISSING DATA SUMMARY ==========\n")
+                report.write(report_data["missing_summary"].to_string() + "\n\n")
+
+                # Alternative TO/DWG No. Matches
+                report.write("========== {<feature>} RECOVERY ANALYSIS ==========\n")
+                if any(isinstance(df, pd.DataFrame) and not df.empty for df in report_data["equivalent_rows"].values()):
+
+                    report.write("🔎 ALTERNATIVE MATCHES FOUND - DATA RECOVERABLE\n")
+                    report.write(report_data["equivalent_rows"].to_string() + "\n\n")
+                else:
+                    report.write("⚠️ NO ALTERNATIVE MATCHES FOUND - DATA LOSS DETECTED\n\n")
+
+                # Impact Assessment
+                report.write("========== OPERATIONAL IMPACT ANALYSIS ==========\n")
+                
+                for col, impact_series in report_data["impact_summary"].items():
+                    report.write(f"\nImpact of Missing '{col}':\n")
+                    report.write(impact_series.to_string() + "\n")
+
+                report.write("=========================================\n")
+                report.write("[MAVERICK] TACTICAL INTELLIGENCE SYSTEM\n")
+                report.write("[END TRANSMISSION]\n")
+
+            print(f"\n✅ [MAVERICK] REPORT FILE GENERATED: {report_filename}")
+
+        return report_data
+
+# --- 
+    def cluster_data(self, GP0, GP1):
+        return self.processor.cluster_data(GP0, GP1)
+
+    def run_graphing(self, df):
+        return self.graph.generate_graphs(df)
+
+    def run_lstm(self, X):
+        return self.lstm.forward(X) if self.lstm else None
+
+My Utls: 
+
+import numpy as np
+import pandas as pd
+import re
+import openpyxl
+import networkx as nx
+import time  # <-- This was missing!
+
+# Libraries for SQL
+import sqlalchemy
+from sqlalchemy import create_engine
+   
+# ------------------------------ Clustering functions ---------------------------------
+def compute_distance_matrix(embeddings):
+    """
+    Computes Euclidean distance matrix for clustering.
+    """
+    num_samples = embeddings.shape[0]
+    distance_matrix = np.zeros((num_samples, num_samples))
+
+    for i in range(num_samples):
+        for j in range(num_samples):
+            distance_matrix[i, j] = np.linalg.norm(embeddings[i] - embeddings[j])  # Euclidean distance
+
+    return distance_matrix
+
+def k_means_clustering(embeddings, k, max_iters):   # TODO: Optimize for stable centroid selection
+    """
+    Basic K-means clustering.
+    """
+    num_samples, embedding_dim = embeddings.shape
+    centroids = embeddings[np.random.choice(num_samples, k, replace=False)]  # Randomly initialize centroids
+    prev_assignments = np.zeros(num_samples)
+
+    for iteration in range(max_iters):
+        distances = np.array([[np.linalg.norm(e - c) for c in centroids] for e in embeddings])
+        assignments = np.argmin(distances, axis=1)
+
+        # Check for convergence
+        if np.all(assignments == prev_assignments):
+            break
+        prev_assignments = assignments
+
+        # Update centroids
+        for cluster in range(k):
+            cluster_points = embeddings[assignments == cluster]
+            if len(cluster_points) > 0:
+                centroids[cluster] = np.mean(cluster_points, axis=0)
+
+    return assignments, centroids
+
+# Dynamic Time Warping (DTW) function for distance computation
+def dtw_distance(series1, series2):
+    """Computes Dynamic Time Warping distance between two sequences."""
+    n, m = len(series1), len(series2)
+    dtw_matrix = np.full((n+1, m+1), np.inf)
+    dtw_matrix[0, 0] = 0
+
+    for i in range(1, n+1):
+        for j in range(1, m+1):
+            cost = abs(series1[i-1] - series2[j-1])
+            dtw_matrix[i, j] = cost + min(dtw_matrix[i-1, j],    # Deletion
+                                          dtw_matrix[i, j-1],    # Insertion
+                                          dtw_matrix[i-1, j-1])  # Match
+
+    return dtw_matrix[n, m]
