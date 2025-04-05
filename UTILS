@@ -44,36 +44,7 @@ def one_hot_encode(y, vocab_size):
     for i in range(batch_size):
         one_hot[y[i], i] = 1  # Set one-hot vector
     return one_hot
-
-# ------------------------------- NSN Encoding Functions -------------------------------
-def encode_nsn_structure(nsn):
-    """Encodes NSN by character type pattern."""
-    nsn_str = str(nsn).strip()
-    encoded_structure = "".join(categorize_char(c) for c in nsn_str)
-    return encoded_structure
-
-# Function to categorize a character
-def categorize_char(c):
-    char_groups = {
-        "digits": "0123456789",
-        "letters": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-        "hyphen": "-",
-        "space": " ",
-        "special": "!@#$%^&*()_+=<>?/"  # Example set of special characters
-    }
-    
-    if c in char_groups["digits"]:
-        return "D"
-    elif c in char_groups["letters"]:
-        return "L"
-    elif c in char_groups["hyphen"]:
-        return "H"
-    elif c in char_groups["space"]:
-        return "S"
-    elif c in char_groups["special"]:
-        return "X"
-    return "U"  # Unknown
-    
+   
 # ------------------------------ Clustering functions ---------------------------------
 def compute_distance_matrix(embeddings):
     """
@@ -128,25 +99,3 @@ def dtw_distance(series1, series2):
                                           dtw_matrix[i-1, j-1])  # Match
 
     return dtw_matrix[n, m]
-    
-# Function to extract FSC and NATO codes
-def extract_fsc_nato(nsn):
-    """
-    Extracts the FSC (first 4 digits) and NATO Country Code (first 2 digits of NIIN).
-    Strips hyphens and ensures correct length formatting.
-    If extraction fails, returns '-1' as default.
-    """
-    try:
-        nsn_str = re.sub(r'[^0-9]', '', str(nsn).strip())  # Remove all non-numeric characters
-
-        # Ensure NSN is at least 13 digits (FSC + NIIN)
-        if len(nsn_str) < 13:
-            return "-1", "-1", "-1"
-
-        fsc = nsn_str[:4]  # First 4 digits = FSC
-        country_code = nsn_str[4:6]  # Next 2 digits = NATO Country Code
-        identifier = nsn_str[6:]  # Next 2 digits = NATO Country Code
-
-        return fsc, country_code, identifier
-    except Exception:
-        return "-1", "-1", "-1"  # Default unknown values
